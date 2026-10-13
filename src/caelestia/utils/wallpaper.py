@@ -10,8 +10,8 @@ from materialyoucolor.hct import Hct
 from materialyoucolor.utils.color_utils import argb_from_rgb
 from PIL import Image
 
+from caelestia.utils import mango
 from caelestia.utils.colourfulness import get_variant
-from caelestia.utils.hypr import message
 from caelestia.utils.material import get_colours_for_image
 from caelestia.utils.paths import (
     compute_hash,
@@ -52,7 +52,10 @@ def get_wallpapers(args: Namespace) -> list[Path]:
     if args.no_filter:
         return walls
 
-    monitors = cast(list[dict[str, int]], message("monitors"))
+    monitors = mango.monitors()
+    # No compositor answer means no size to filter against: keep every wallpaper.
+    if not monitors:
+        return walls
     filter_size = min(m["width"] for m in monitors), min(m["height"] for m in monitors)
 
     return [f for f in walls if check_wall(f, filter_size, args.threshold)]

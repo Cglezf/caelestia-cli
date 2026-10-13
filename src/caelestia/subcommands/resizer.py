@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import socket
 import time
@@ -312,6 +313,9 @@ class Command:
             warn(f"failed to parse window open event: {e}")
 
     def run(self) -> None:
+        # The resizer listens on Hyprland's event socket; mango has no equivalent stream yet.
+        if not os.getenv("HYPRLAND_INSTANCE_SIGNATURE"):
+            fatal("the resizer needs Hyprland; under mango use window rules in mango's config instead")
         if self.args.daemon:
             self._run_daemon()
         elif hasattr(self.args, "pattern") and self.args.pattern == "pip":

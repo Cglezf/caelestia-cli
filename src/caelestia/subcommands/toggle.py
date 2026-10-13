@@ -3,10 +3,19 @@ import shlex
 import shutil
 from argparse import Namespace
 from collections import ChainMap
-from typing import Any, Callable, cast
+from typing import Any
 
-from caelestia.utils import hypr
+from caelestia.utils import mango
+from caelestia.utils.io import warn
 from caelestia.utils.paths import get_config
+
+# Hyprland client key -> mango client key, so matches written for upstream keep
+# working. Keys mango has no equivalent for (workspace...) are dropped.
+MATCH_KEYS = {"class": "appid", "initialClass": "appid", "appid": "appid", "title": "title", "initialTitle": "title"}
+
+
+def to_mango_match(match: dict[str, Any]) -> dict[str, Any]:
+    return {MATCH_KEYS[key]: value for key, value in match.items() if key in MATCH_KEYS}
 
 
 def is_subset(superset, subset):
@@ -112,53 +121,52 @@ class Command:
             self.specialws()
             return
 
-        spawned = False
+        # Mango has no named special workspaces: each client becomes a named
+        # scratchpad, and with nothing to toggle the single special tag stands in.
+        toggled = False
         if self.args.workspace in self.cfg:
             for client in self.cfg[self.args.workspace].values():
                 if "enable" in client and client["enable"] and self.handle_client_config(client):
-                    spawned = True
+                    toggled = True
 
-        if not spawned:
-            hypr.dispatch("togglespecialworkspace", self.args.workspace)
+        if not toggled:
+            mango.dispatch("toggle_special_tag")
 
     def get_clients(self) -> list[dict[str, Any]]:
         if self.clients is None:
-            self.clients = cast(list[dict[str, Any]], hypr.message("clients"))
-        return self.clients
+            self.clients = mango.clients()
+        return self.clients or []
 
-    def move_client(self, selector: Callable, workspace: str) -> None:
-        for client in self.get_clients():
-            if selector(client) and client["workspace"]["name"] != f"special:{workspace}":
-                hypr.dispatch("movetoworkspacesilent", f"special:{workspace},address:{client['address']}")
-
-    def spawn_client(self, selector: Callable, spawn: list[str]) -> bool:
-        if (spawn[0].endswith(".desktop") or shutil.which(spawn[0])) and not any(
-            selector(client) for client in self.get_clients()
-        ):
-            hypr.dispatch("exec", f"[workspace special:{self.args.workspace}] {shlex.join(spawn)}")
-            return True
-        else:
-            return False
+    def spawn_command(self, spawn: list[str]) -> list[str] | None:
+        if spawn and spawn[0].endswith(".desktop"):
+            return ["app2unit", "--", *spawn]
+        if spawn and shutil.which(spawn[0]):
+            return spawn
+        return None
 
     def handle_client_config(self, client: dict[str, Any]) -> bool:
+        matches = [m for m in map(to_mango_match, client["match"]) if m]
+
         def selector(c: dict[str, Any]) -> bool:
             # Each match is or, inside matches is and
-            for match in client["match"]:
-                if is_subset(c, match):
-                    return True
+            return any(is_subset(c, match) for match in matches)
+
+        existing = next((c for c in self.get_clients() if selector(c)), None)
+        command = self.spawn_command(client.get("command") or [])
+        if existing is None and command is None:
             return False
 
-        spawned = False
-        if "command" in client and client["command"]:
-            spawned = self.spawn_client(selector, client["command"])
-        if "move" in client and client["move"]:
-            self.move_client(selector, self.args.workspace)
-
-        return spawned
+        # toggle_named_scratchpad finds the window by appid (or by title when
+        # there is no appid) and runs the command only when none matches.
+        appid = existing["appid"] if existing else next((m["appid"] for m in matches if "appid" in m), "")
+        title = (
+            "" if appid else (existing or {}).get("title") or next((m["title"] for m in matches if "title" in m), "")
+        )
+        try:
+            return mango.dispatch("toggle_named_scratchpad", appid, title, shlex.join(command or []))
+        except ValueError as e:
+            warn(f"cannot toggle {appid or title}: {e}")
+            return False
 
     def specialws(self) -> None:
-        monitors = cast(list[dict[str, Any]], hypr.message("monitors"))
-        target = next((m for m in monitors if m.get("focused")), None)
-        if target:
-            special = target.get("specialWorkspace", {}).get("name", "")[8:] or "special"
-            hypr.dispatch("togglespecialworkspace", special)
+        mango.dispatch("toggle_special_tag")

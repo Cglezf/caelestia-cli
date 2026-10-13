@@ -2,7 +2,7 @@ import subprocess
 from argparse import Namespace
 from datetime import datetime
 
-from caelestia.utils import hypr
+from caelestia.utils import mango
 from caelestia.utils.notify import notify
 from caelestia.utils.paths import screenshots_cache_dir, screenshots_dir
 
@@ -35,7 +35,7 @@ class Command:
 
     def fullscreen(self) -> None:
         cmd = ["grim"]
-        focused_monitor = next(monitor for monitor in hypr.message("monitors") if monitor["focused"])
+        focused_monitor = mango.focused_monitor()
         if focused_monitor:
             cmd += ["-o", focused_monitor["name"]]
         cmd += ["-"]

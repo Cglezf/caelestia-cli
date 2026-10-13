@@ -6,7 +6,7 @@ from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
 
-from caelestia.utils import hypr
+from caelestia.utils import mango
 from caelestia.utils.notify import close_notification, notify
 from caelestia.utils.paths import get_config, recording_notif_path, recording_path, recordings_dir
 
@@ -68,10 +68,14 @@ class Command:
     def intersects(self, a: tuple[int, int, int, int], b: tuple[int, int, int, int]) -> bool:
         return a[0] < b[0] + b[2] and a[0] + a[2] > b[0] and a[1] < b[1] + b[3] and a[1] + a[3] > b[1]
 
+    def fps(self, monitor: dict) -> int:
+        # mango reports no refresh rate; without wlr-randr, 60 is gpu-screen-recorder's own default.
+        return round(mango.refresh_rate(monitor["name"]) or 60)
+
     def start(self) -> None:
         args = ["-w"]
 
-        monitors = hypr.message("monitors")
+        monitors = mango.monitors()
         if self.args.region:
             if self.args.region == "slurp":
                 region = subprocess.check_output(
@@ -92,17 +96,12 @@ class Command:
             max_rr = 0
             for monitor in monitors:
                 if self.intersects((monitor["x"], monitor["y"], monitor["width"], monitor["height"]), r):
-                    rr = round(monitor["refreshRate"])
-                    max_rr = max(max_rr, rr)
-            args += ["-f", str(max_rr)]
+                    max_rr = max(max_rr, self.fps(monitor))
+            args += ["-f", str(max_rr or 60)]
         else:
-            focused_monitor = next(monitor for monitor in monitors if monitor["focused"])
+            focused_monitor = next((m for m in monitors if m.get("active")), None)
             if focused_monitor:
-                args += [
-                    focused_monitor["name"],
-                    "-f",
-                    str(round(focused_monitor["refreshRate"])),
-                ]
+                args += [focused_monitor["name"], "-f", str(self.fps(focused_monitor))]
 
         if self.args.sound:
             args += ["-a", "default_output"]

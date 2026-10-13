@@ -7,6 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from caelestia.utils import mango
 from caelestia.utils.colour import get_dynamic_colours
 from caelestia.utils.hypr import is_lua_config
 from caelestia.utils.io import log_exception
@@ -147,6 +148,11 @@ def apply_terms(sequences: str) -> None:
 def apply_hypr(conf: str) -> None:
     ext = "lua" if is_lua_config() else "conf"
     atomic_write(config_dir / f"hypr/scheme/current.{ext}", conf)
+
+
+@log_exception
+def apply_mango(colours: dict[str, str]) -> None:
+    mango.apply_colours(colours)
 
 
 @log_exception
@@ -424,8 +430,11 @@ def apply_colours(colours: dict[str, str], mode: str) -> None:
 
             if check("enableTerm"):
                 apply_terms(gen_sequences(colours))
-            if check("enableHypr"):
+            # Only under Hyprland: elsewhere it would create ~/.config/hypr for nothing.
+            if check("enableHypr") and os.getenv("HYPRLAND_INSTANCE_SIGNATURE"):
                 apply_hypr(gen_lua(colours) if is_lua_config() else gen_conf(colours))
+            if check("enableMango"):
+                apply_mango(colours)
             if check("enableDiscord"):
                 apply_discord(gen_scss(colours))
             if check("enableSpicetify"):
